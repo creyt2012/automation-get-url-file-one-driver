@@ -1,0 +1,85 @@
+
+copyright_message = """
+Copyright (c) 2023 Mortar INC. All rights reserved.
+
+"""
+
+
+print(copyright_message)
+
+from msal import PublicClientApplication
+import requests
+from openpyxl import load_workbook, Workbook
+import os
+from concurrent.futures import ThreadPoolExecutor
+
+# Thông tin xác thực
+client_id = "3c6b77d6-38dd-49da-a348-e25f523c430a"
+client_secret = "Vai8Q~KRVEpCXrr7LTjdKzlGcz~QCR5tm3CMLcpms"
+redirect_uri = "https://login.microsoftonline.com/common/oauth2/nativeclient"
+scopes = ['User.Read', 'Files.Read.All']
+
+app = PublicClientApplication(client_id)
+accounts = app.get_accounts()
+
+result = None
+if accounts:
+    result = app.acquire_token_silent(scopes, account=accounts[0])
+
+if not result:
+    result = app.acquire_token_interactive(scopes)
+
+access_token = result.get("access_token")
+
+# Tên tệp Excel cố định
+output_file = "/Users/developments/Downloads/c# cơ bản trong 5 tuần/listurl.xlsx"
+
+# Kiểm tra xem tệp Excel đã tồn tại
+if not os.path.isfile(output_file):
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.cell(row=1, column=1, value="Tên tệp")
+    worksheet.cell(row=1, column=2, value="URL")
+    print("Tạo tệp Excel thành công")
+else:
+    workbook = load_workbook(output_file)
+    worksheet = workbook.active5
+    print("Tệp Excel đã tồn tại")
+
+visited_files = set(worksheet.iter_rows(values_only=True, min_col=2, max_col=2))
+
+# Hàm để lấy danh sách tên tệp và URL với tất cả tệp có đuôi .rar và .zip trong thư mục 'khoá học'
+def get_all_file_info(folder_name):
+    print(f"Đang lọc tệp trong thư mục '{folder_name}'")
+    url = f'https://graph.microsoft.com/v1.0/me/drive/root:/{folder_name}:/children'
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+    }
+    response = requests.get(url, headers=headers)
+
+    if response.status_code == 200:
+        data = response.json()
+
+        for item in data['value']:
+            if 'file' in item and (item['name'].lower().endswith('.rar') or item['name'].lower().endswith('.zip')):
+                file_name = item['name']
+                file_url = item['@microsoft.graph.downloadUrl']
+                if file_url not in visited_files:
+                    visited_files.add(file_url)
+                    worksheet.append([file_name, file_url])
+                    print(f"Đã lấy URL: {file_url}")
+                    print(f"Đã lấy tên tệp: {file_name}")
+
+            if 'folder' in item:
+                get_all_file_info(item['id'])
+
+# Nhập số luồng từ người dùng
+num_threads = int(input("Nhập số luồng: "))
+
+# Sử dụng ThreadPoolExecutor để chạy đa luồng
+folder_name = input("Nhập tên thư mục: ")
+with ThreadPoolExecutor(max_workers=num_threads) as executor:
+    executor.submit(get_all_file_info, folder_name)
+
+# Lưu tệp Excel
+workbook.save(output_file)
